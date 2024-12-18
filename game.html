@@ -1,0 +1,302 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Battle Royale Game</title>
+  <style>
+    body {
+      margin: 0;
+      overflow: hidden;
+      background-color: rgb(226, 225, 225);
+      color: white;
+      font-family: Arial, sans-serif;
+    }
+    #gameContainer {
+      position: relative;
+      width: 1200px;
+      height: 900px;
+      margin: 0 auto;
+      border: 2px solid black;
+      background-color: #466280; /* Sky blue */
+    }
+    #endMessage {
+      position: absolute;
+      top: 50%;
+      left: 50%;
+      transform: translate(-50%, -50%);
+      font-size: 2rem;
+      color: white;
+      background: rgba(0, 0, 0, 0.7);
+      padding: 1rem;
+      border-radius: 10px;
+      display: none;
+      z-index: 10;
+    }
+    .navbar {
+      background-color: #222;
+      color: white;
+      padding: 10px 20px;
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+    }
+    .navbar a {
+      color: white;
+      text-decoration: none;
+      font-size: 1.2rem;
+    }
+    .navbar a:hover {
+      text-decoration: underline;
+    }
+  </style>
+</head>
+<body>
+  <!-- Navigation Bar -->
+  <div class="navbar">
+    <a href="index.html">&#8592; Back to Home</a>
+    <span>Battle Royale Game</span>
+  </div>
+
+  <div id="gameContainer">
+    <canvas id="gameCanvas"></canvas>
+    <div id="endMessage"></div>
+  </div>
+
+  <script>
+    const canvas = document.getElementById("gameCanvas");
+    const ctx = canvas.getContext("2d");
+    const endMessage = document.getElementById("endMessage");
+
+    canvas.width = 1200;
+    canvas.height = 900;
+
+    // Game objects
+    const player = { x: 100, y: 100, size: 20, speed: 5, color: "red", alive: true };
+    const bullets = [];
+    const enemies = [];
+    const obstacles = [
+      { x: 400, y: 200, width: 300, height: 50 },
+      { x: 150, y: 500, width: 50, height: 300 },
+      { x: 800, y: 600, width: 200, height: 150 }
+    ];
+
+    const keys = {};
+    let isGameOver = false;
+
+    window.addEventListener("keydown", (e) => (keys[e.key] = true));
+    window.addEventListener("keyup", (e) => (keys[e.key] = false));
+    window.addEventListener("click", shootBullet);
+
+    function shootBullet(e) {
+      if (!player.alive) return;
+      const angle = Math.atan2(e.clientY - player.y, e.clientX - player.x);
+      bullets.push({
+        x: player.x,
+        y: player.y,
+        dx: Math.cos(angle) * 6,
+        dy: Math.sin(angle) * 6,
+        size: 5,
+        owner: player
+      });
+    }
+
+    function enemyShoot(enemy) {
+      for (let i = 0; i < 3; i++) { // Enemies shoot 3 bullets at once
+        const spread = (Math.random() - 0.5) * 0.4; // Random spread
+        const angle = Math.atan2(player.y - enemy.y, player.x - enemy.x) + spread;
+        bullets.push({
+          x: enemy.x,
+          y: enemy.y,
+          dx: Math.cos(angle) * 5, // Faster bullets
+          dy: Math.sin(angle) * 5,
+          size: 5,
+          owner: enemy
+        });
+      }
+    }
+
+    function spawnEnemies(count) {
+      for (let i = 0; i < count; i++) {
+        let enemy;
+        do {
+          enemy = {
+            x: Math.random() * canvas.width,
+            y: Math.random() * canvas.height,
+            size: 20,
+            color: "purple",
+            speed: 4 + Math.random() * 1.1, // Enemies move faster
+            alive: true,
+            shootCooldown: Math.random() * 100 + 50, // Reduced cooldown
+          };
+        } while (checkCollisionWithObstacles(enemy)); // Ensure enemies don't spawn in walls
+        enemies.push(enemy);
+      }
+    }
+
+    function updatePlayer() {
+      if (!player.alive) return;
+      const prevX = player.x;
+      const prevY = player.y;
+      if (keys["ArrowUp"] || keys["w"]) player.y -= player.speed;
+      if (keys["ArrowDown"] || keys["s"]) player.y += player.speed;
+      if (keys["ArrowLeft"] || keys["a"]) player.x -= player.speed;
+      if (keys["ArrowRight"] || keys["d"]) player.x += player.speed;
+
+      // Keep player within canvas bounds and avoid obstacles
+      if (checkCollisionWithObstacles(player)) {
+        player.x = prevX;
+        player.y = prevY;
+      }
+    }
+
+    function updateEnemies() {
+      enemies.forEach((enemy) => {
+        if (!enemy.alive) return;
+
+        const prevX = enemy.x;
+        const prevY = enemy.y;
+        
+        // Move towards player
+        const angle = Math.atan2(player.y - enemy.y, player.x - enemy.x);
+        enemy.x += Math.cos(angle) * enemy.speed;
+        enemy.y += Math.sin(angle) * enemy.speed;
+
+        // Check for collision with obstacles
+        if (checkCollisionWithObstacles(enemy)) {
+          enemy.x = prevX;
+          enemy.y = prevY;
+        }
+
+        // Shooting cooldown
+        if (enemy.shootCooldown <= 0) {
+          enemyShoot(enemy);
+          enemy.shootCooldown = Math.random() * 100 + 50; // Faster shooting rate
+        } else {
+          enemy.shootCooldown -= 1;
+        }
+      });
+    }
+
+    function updateBullets() {
+      for (let i = bullets.length - 1; i >= 0; i--) {
+        const bullet = bullets[i];
+        bullet.x += bullet.dx;
+        bullet.y += bullet.dy;
+
+        // Remove bullets off-screen
+        if (
+          bullet.x < 0 ||
+          bullet.x > canvas.width ||
+          bullet.y < 0 ||
+          bullet.y > canvas.height
+        ) {
+          bullets.splice(i, 1);
+          continue;
+        }
+
+        // Stop bullets if they hit obstacles
+        if (checkBulletCollisionWithObstacles(bullet)) {
+          bullets.splice(i, 1);
+          continue;
+        }
+
+        // Check for collision with enemies or player
+        if (bullet.owner !== player && checkCollision(bullet, player)) {
+          player.alive = false;
+          gameOver("Game Over! You were shot.");
+        }
+        enemies.forEach((enemy) => {
+          if (enemy.alive && bullet.owner !== enemy && checkCollision(bullet, enemy)) {
+            enemy.alive = false;
+            bullets.splice(i, 1);
+          }
+        });
+      }
+    }
+
+    function checkCollision(obj1, obj2) {
+      return Math.hypot(obj1.x - obj2.x, obj1.y - obj2.y) < obj1.size + obj2.size;
+    }
+
+    function checkCollisionWithObstacles(obj) {
+      return obstacles.some((obs) =>
+        obj.x + obj.size > obs.x &&
+        obj.x - obj.size < obs.x + obs.width &&
+        obj.y + obj.size > obs.y &&
+        obj.y - obj.size < obs.y + obs.height
+      );
+    }
+
+    function checkBulletCollisionWithObstacles(bullet) {
+      return obstacles.some((obs) =>
+        bullet.x > obs.x &&
+        bullet.x < obs.x + obs.width &&
+        bullet.y > obs.y &&
+        bullet.y < obs.y + obs.height
+      );
+    }
+
+    function gameOver(message) {
+      isGameOver = true;
+      endMessage.innerText = message;
+      endMessage.style.display = "block";
+    }
+
+    function draw() {
+      ctx.clearRect(0, 0, canvas.width, canvas.height);
+
+      // Draw obstacles
+      ctx.fillStyle = "gray";
+      obstacles.forEach((obs) => {
+        ctx.fillRect(obs.x, obs.y, obs.width, obs.height);
+      });
+
+      // Draw player
+      if (player.alive) {
+        ctx.fillStyle = player.color;
+        ctx.beginPath();
+        ctx.arc(player.x, player.y, player.size, 0, Math.PI * 2);
+        ctx.fill();
+      }
+
+      // Draw enemies
+      enemies.forEach((enemy) => {
+        if (!enemy.alive) return;
+        ctx.fillStyle = enemy.color;
+        ctx.beginPath();
+        ctx.arc(enemy.x, enemy.y, enemy.size, 0, Math.PI * 2);
+        ctx.fill();
+      });
+
+      // Draw bullets
+      ctx.fillStyle = "black";
+      bullets.forEach((bullet) => {
+        ctx.beginPath();
+        ctx.arc(bullet.x, bullet.y, bullet.size, 0, Math.PI * 2);
+        ctx.fill();
+      });
+    }
+
+    function checkWinCondition() {
+      if (enemies.every((enemy) => !enemy.alive)) {
+        gameOver("Victory Royale");
+      }
+    }
+
+    function gameLoop() {
+      if (isGameOver) return;
+      updatePlayer();
+      updateEnemies();
+      updateBullets();
+      draw();
+      checkWinCondition();
+      requestAnimationFrame(gameLoop);
+    }
+
+    // Initialize game
+    spawnEnemies(10); // Increased enemy count
+    gameLoop();
+  </script>
+</body>
+</html>
